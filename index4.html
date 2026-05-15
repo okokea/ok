@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 西洋棋遊戲</title>
+
+<style>
+  body{
+    margin:0;
+    background:#1e1e1e;
+    color:white;
+    font-family:Arial;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+
+  h1{
+    margin:20px;
+  }
+
+  #status{
+    font-size:24px;
+    margin-bottom:15px;
+  }
+
+  #board{
+    width:640px;
+    height:640px;
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    border:8px solid #333;
+  }
+
+  .cell{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:52px;
+    cursor:pointer;
+    user-select:none;
+  }
+
+  .white{
+    background:#f0d9b5;
+  }
+
+  .black{
+    background:#b58863;
+  }
+
+  .selected{
+    outline:5px solid yellow;
+  }
+
+  .move{
+    box-shadow: inset 0 0 0 5px rgba(0,255,0,0.5);
+  }
+
+  #restart{
+    margin:20px;
+    padding:12px 24px;
+    font-size:20px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    background:gold;
+    font-weight:bold;
+  }
+
+  @media(max-width:700px){
+
+    #board{
+      width:95vw;
+      height:95vw;
+    }
+
+    .cell{
+      font-size:8vw;
+    }
+  }
+</style>
+</head>
+
+<body>
+
+<h1>♟ AI 西洋棋</h1>
+
+<div id="status">你的回合（白方）</div>
+
+<div id="board"></div>
+
+<button id="restart">重新開始</button>
+
+<script>
+
+const boardEl = document.getElementById("board");
+const statusEl = document.getElementById("status");
+
+const pieces = {
+  r:"♜", n:"♞", b:"♝", q:"♛", k:"♚", p:"♟",
+  R:"♖", N:"♘", B:"♗", Q:"♕", K:"♔", P:"♙"
+};
+
+let selected = null;
+
+let board = [];
+
+function initBoard(){
+
+  board = [
+    ["r","n","b","q","k","b","n","r"],
+    ["p","p","p","p","p","p","p","p"],
+    ["","","","","","","",""],
+    ["","","","","","","",""],
+    ["","","","","","","",""],
+    ["","","","","","","",""],
+    ["P","P","P","P","P","P","P","P"],
+    ["R","N","B","Q","K","B","N","R"]
+  ];
+
+  drawBoard();
+}
+
+function drawBoard(){
+
+  boardEl.innerHTML = "";
+
+  for(let r=0;r<8;r++){
+
+    for(let c=0;c<8;c++){
+
+      const cell = document.createElement("div");
+
+      cell.classList.add("cell");
+
+      if((r+c)%2===0){
+        cell.classList.add("white");
+      }else{
+        cell.classList.add("black");
+      }
+
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+
+      const piece = board[r][c];
+
+      if(piece){
+        cell.textContent = pieces[piece];
+      }
+
+      cell.onclick = ()=>playerClick(r,c);
+
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+function playerClick(r,c){
+
+  const piece = board[r][c];
+
+  // 已選棋子 -> 嘗試移動
+  if(selected){
+
+    const moves = getValidMoves(selected.row, selected.col);
+
+    const valid = moves.find(m=>m.row===r && m.col===c);
+
+    if(valid){
+
+      movePiece(selected.row, selected.col, r, c);
+
+      selected = null;
+
+      drawBoard();
+
+      statusEl.textContent = "AI思考中...";
+
+      setTimeout(aiMove,700);
+
+      return;
+    }
+
+    selected = null;
+    drawBoard();
+  }
+
+  // 選擇白棋
+  if(piece && isWhite(piece)){
+
+    selected = {row:r,col:c};
+
+    drawBoard();
+
+    highlight(r,c);
+
+    const moves = getValidMoves(r,c);
+
+    moves.forEach(m=>{
+      highlightMove(m.row,m.col);
+    });
+  }
+}
+
+function movePiece(fr,fc,tr,tc){
+
+  board[tr][tc] = board[fr][fc];
+  board[fr][fc] = "";
+}
+
+function isWhite(piece){
+  return piece === piece.toUpperCase();
+}
+
+function isBlack(piece){
+  return piece === piece.toLowerCase();
+}
+
+function inside(r,c){
+  return r>=0 && r<8 && c>=0 && c<8;
+}
+
+function getValidMoves(r,c){
+
+  const piece = board[r][c];
+
+  if(!piece) return [];
+
+  const moves = [];
+
+  const white = isWhite(piece);
+
+  const lower = piece.toLowerCase();
+
+  // Pawn
+  if(lower==="p"){
+
+    const dir = white ? -1 : 1;
+
+    const nr = r + dir;
+
+    if(inside(nr,c) && board[nr][c]===""){
+      moves.push({row:nr,col:c});
+    }
+
+    // 吃子
+    [-1,1].forEach(dc=>{
+
+      const nc = c + dc;
+
+      if(inside(nr,nc)){
+
+        const target = board[nr][nc];
+
+        if(target &&
+          ((white && isBlack(target)) ||
+           (!white && isWhite(target)))
+        ){
+          moves.push({row:nr,col:nc});
+        }
+      }
+    });
+  }
+
+  // Rook
+  if(lower==="r"){
+    lineMoves(r,c,moves,white,[
+      [1,0],[-1,0],[0,1],[0,-1]
+    ]);
+  }
+
+  // Bishop
+  if(lower==="b"){
+    lineMoves(r,c,moves,white,[
+      [1,1],[1,-1],[-1,1],[-1,-1]
+    ]);
+  }
+
+  // Queen
+  if(lower==="q"){
+    lineMoves(r,c,moves,white,[
+      [1,0],[-1,0],[0,1],[0,-1],
+      [1,1],[1,-1],[-1,1],[-1,-1]
+    ]);
+  }
+
+  // King
+  if(lower==="k"){
+
+    for(let dr=-1;dr<=1;dr++){
+      for(let dc=-1;dc<=1;dc++){
+
+        if(dr===0 && dc===0) continue;
+
+        const nr=r+dr;
+        const nc=c+dc;
+
+        if(inside(nr,nc)){
+
+          const target=board[nr][nc];
+
+          if(
+            !target ||
+            (white && isBlack(target)) ||
+            (!white && isWhite(target))
+          ){
+            moves.push({row:nr,col:nc});
+          }
+        }
+      }
+    }
+  }
+
+  // Knight
+  if(lower==="n"){
+
+    const steps = [
+      [2,1],[2,-1],[-2,1],[-2,-1],
+      [1,2],[1,-2],[-1,2],[-1,-2]
+    ];
+
+    steps.forEach(s=>{
+
+      const nr=r+s[0];
+      const nc=c+s[1];
+
+      if(inside(nr,nc)){
+
+        const target = board[nr][nc];
+
+        if(
+          !target ||
+          (white && isBlack(target)) ||
+          (!white && isWhite(target))
+        ){
+          moves.push({row:nr,col:nc});
+        }
+      }
+    });
+  }
+
+  return moves;
+}
+
+function lineMoves(r,c,moves,white,directions){
+
+  directions.forEach(d=>{
+
+    let nr=r+d[0];
+    let nc=c+d[1];
+
+    while(inside(nr,nc)){
+
+      const target = board[nr][nc];
+
+      if(!target){
+
+        moves.push({row:nr,col:nc});
+
+      }else{
+
+        if(
+          (white && isBlack(target)) ||
+          (!white && isWhite(target))
+        ){
+          moves.push({row:nr,col:nc});
+        }
+
+        break;
+      }
+
+      nr += d[0];
+      nc += d[1];
+    }
+  });
+}
+
+function highlight(r,c){
+
+  const index = r*8+c;
+
+  boardEl.children[index].classList.add("selected");
+}
+
+function highlightMove(r,c){
+
+  const index = r*8+c;
+
+  boardEl.children[index].classList.add("move");
+}
+
+/* AI */
+
+function aiMove(){
+
+  const allMoves = [];
+
+  for(let r=0;r<8;r++){
+
+    for(let c=0;c<8;c++){
+
+      const piece = board[r][c];
+
+      if(piece && isBlack(piece)){
+
+        const moves = getValidMoves(r,c);
+
+        moves.forEach(m=>{
+
+          allMoves.push({
+            fr:r,
+            fc:c,
+            tr:m.row,
+            tc:m.col
+          });
+        });
+      }
+    }
+  }
+
+  if(allMoves.length===0){
+
+    statusEl.textContent = "你贏了！";
+
+    return;
+  }
+
+  // 隨機AI
+  const move = allMoves[
+    Math.floor(Math.random()*allMoves.length)
+  ];
+
+  movePiece(
+    move.fr,
+    move.fc,
+    move.tr,
+    move.tc
+  );
+
+  drawBoard();
+
+  statusEl.textContent = "你的回合（白方）";
+}
+
+/* 重新開始 */
+
+document.getElementById("restart").onclick=()=>{
+
+  selected = null;
+
+  statusEl.textContent = "你的回合（白方）";
+
+  initBoard();
+};
+
+initBoard();
+
+</script>
+
+</body>
+</html>
